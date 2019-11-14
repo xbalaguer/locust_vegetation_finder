@@ -105,4 +105,4 @@ venv.bak/
 
 # Pycharm files
 
-*.idea
+.idea
