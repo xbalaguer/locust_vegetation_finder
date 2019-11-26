@@ -3,6 +3,7 @@ import picamera
 from picamera import PiCamera
 import picamera.array
 import cv2
+import numpy as np
 
 
 class CameraInterface:
@@ -20,7 +21,11 @@ class CameraInterface:
 
         # img = cv2.imread(picamera.capture('jpeg'))
 
-        b, g, r = cv2.split(img)
+        # b, g, r = cv2.split(img)
+
+        b = np.array(img[:, :, 0]).astype(float) + 0.00000000001
+        g = np.array(img[:, :, 1]).astype(float)
+        r = np.array(img[:, :, 2]).astype(float) + 0.00000000001
 
         return r, g, b
 
@@ -29,7 +34,6 @@ class CameraInterface:
         cv2.imwrite(newfile, image)
 
         return
-
 
 
 
