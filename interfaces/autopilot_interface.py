@@ -19,6 +19,15 @@ class AutopilotInterface():
     #     return vehicle
 
     # # #
+    def set_data_drone(self):      # necessary data to tag the obtained vegetated images
+        latitude = self.vehicle.location.global_frame.lat
+        longitude = self.vehicle.location.global_frame.lon
+        pitch = self.vehicle.attitude.pitch
+        altitude = self.vehicle.location.global_frame.alt
+
+        data_drone = [latitude, longitude, altitude, pitch]
+
+        return data_drone
 
     def get_altitude(self):
         return self.vehicle.location.global_frame.alt
