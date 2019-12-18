@@ -5,8 +5,11 @@ from main import args
 class AutopilotInterface():
 
     def __init__(self):
-        device = args.connect
-        vehicle = connect(device, wait_ready=True, baud=57600)
+        #device = args.connect
+
+        device = 127.0.0.1:57600
+        #vehicle = connect(device, wait_ready=True, baud=57600)
+        vehicle = connect(device, wait_ready=True)
         self.vehicle = vehicle
 
     # def connect_to_vehicle(self):
