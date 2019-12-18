@@ -11,29 +11,35 @@ class CameraInterface:
     def __init__(self):
         self.camera = PiCamera()
 
+        # With the maximum resolution takes about 10 seconds to process an image
+        self.camera.resolution = (2592, 1952)
+
+        # self.camera.resolution = (3280, 2464)
+        # self.camera.resolution = (1640, 922)
+
+        self.camera.exposure_mode = 'auto'
+
         # camera.iso = 150
         # camera.shutter_speed = 150
         # camera.exposure_mode = 'off'
 
-    def capture_frame(self):     # capture frame and return three arrays, one for each spectrum bands
+    def capture_frame(self):     # capture frame and filters the image for vegetation detection
 
-        img = picamera.array.PiRGBArray(self.camera).array
+        img = np.empty((self.camera.resolution[1], self.camera.resolution[0], 3), dtype=np.uint8)
 
-        # img = cv2.imread(picamera.capture('jpeg'))
+        self.camera.capture(img, 'rgb')
 
-        # b, g, r = cv2.split(img)
+        # img = picamera.array.PiRGBArray(self.camera).array
 
-        b = np.array(img[:, :, 0]).astype(float) + 0.00000000001
-        g = np.array(img[:, :, 1]).astype(float)
-        r = np.array(img[:, :, 2]).astype(float) + 0.00000000001
+        return img
 
-        return r, g, b
 
     def save_image(self, newfile, image):
 
         cv2.imwrite(newfile, image)
 
         return
+
 
 
 

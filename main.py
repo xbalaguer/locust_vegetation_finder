@@ -17,17 +17,52 @@ from libs.terminalMessage import TerminalMessage, Color
 import argparse
 from interfaces.autopilot_interface import AutopilotInterface
 from interfaces.camera_interface import CameraInterface
-import time
 import numpy as np
 import os
 import json
 import pandas as pd
+import cv2
+import math
 
 
-def image_correction(heading, pitch, roll, latitude, longitude, height):  # function to obtain real coordinates of photo vertices
+def footprint():
 
-    coordinates = [ul, ur, dl, dr]    # ul is upper left vertex GPS coordinates
-    return image, coordinates
+    # Camera carachteristics:
+
+    # Sensor (mm)
+    sx = 3.68
+    sy = 2.76
+
+    # Focal length of lens (mm)
+    fl = 3.04
+
+    # Pixels
+    px = CameraInterface.camera.resolution[1]
+    py = CameraInterface.camera.resolution[0]
+
+    pixels_camera = px * py
+
+    # Field of view wide (gra)
+    HFOV = 62.2
+    # HFOV = math.radians(HFOV)
+    HFOVcal = 2 * math.atan(sx / (2 * fl))
+    # HFOVcal = math.degrees(HFOVcal)
+    # Field of view tall (gra)
+    VFOV = 48.8
+    # VFOV = math.radians(VFOV)
+    VFOVcal = 2 * math.atan(sy / (2 * fl))
+    # VFOVcal = math.degrees(VFOVcal)
+
+    pitch = math.radians(AutopilotInterface.get_pitch())
+    roll = math.radians(AutopilotInterface.get_roll())
+    # FOOTPRINT(m)
+
+    # Footprint needs to be well calculated
+    fy2 =
+    fx2 =
+    footprint = fy2 * fx2
+
+    return footprint
 
 
 def write_image_data(output_file, data_drone, data_image):   # function for writing the image data as a json in a txt file
@@ -85,50 +120,100 @@ def create_directory():  # tested and working
 
     return
 
+def contrast_stretch(im):
+    """
+    Performs a simple contrast stretch of the given image, from 5-95%.
+    """
+    in_min = np.percentile(im, 5)
+    in_max = np.percentile(im, 95)
+
+    out_min = 0.0
+    out_max = 255.0
+
+    out = im - in_min
+    out *= ((out_min - out_max) / (in_min - in_max))
+    out += in_min
+
+    return out
 
 def main_loop(camera_interface, autopilot_interface):
 
-    r, g, b = camera_interface.capture_frame()
+    img = camera_interface.capture_frame()
 
+    # We want a smoother image to have a better processing results
+    median = cv2.medianBlur(img, 5)
+
+    # We convert the image to HSV to isolate the vegetation
+    hsv_image = cv2.cvtColor(median, cv2.COLOR_BGR2HSV)
+
+    # define range in HSV to create a mask that will be applied to the original image
+    lower_limit = np.array([110, 135, 160])
+    upper_limit = np.array([255, 200, 255])
+
+    # Threshold the HSV image to get only vegetation
+    mask_red = cv2.inRange(hsv_image, lower_limit, upper_limit)
+
+    #We process the obtained mask in order to reduce noise in the image
+    kernel = np.ones((5, 5), np.uint8)
+    opening = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
+
+    kernel = np.ones((8, 8), np.uint8)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    mask_red = closing
+
+   # Once we have a gray colorspace mask, we want to add the original image to it
+    img2 = cv2.bitwise_and(img, img, mask=mask_red)
+
+    # Colorbands of the original image containing vegetation
+    b = np.array(img2[:, :, 0]).astype(float) + 0.00000000001
+    g = np.array(img2[:, :, 1]).astype(float)
+    r = np.array(img2[:, :, 2]).astype(float) + 0.00000000001
+
+    nir = b
+    red = r
     np.seterr(divide='ignore', invalid='ignore')
 
-    ndvi = (r - b) / (b + r)
+    ndvi = ((nir - red) / (nir + red)).astype(float)
 
-    y = 0  # y gives us the total number of values that are following ndvi condition
-    i = 0
+    #Once we have the ndvi matrix, we want to know how many values are following the ndvi condition
+    values_ndvi = np.count_nonzero(ndvi > 0.2)
 
-    while i < ndvi.shape[0]:
-        j = 0
-        while j < ndvi.shape[1]:
-            if ndvi[i, j] > 0.2:
-                y += 1
-                j += 1
-            else:
-                j += 1
-        i += 1
+    # we multiply the number of rows by the number of columns to obtain the total number of values
+    total_values = ndvi.shape[0] * ndvi.shape[1]
 
-    total_values = ndvi.shape[0] * ndvi.shape[1]  # we multiply the number of rows by the number of columns to obtain
-    # the total number of values
+    percent = round(((values_ndvi / total_values) * 100), 2)
 
-    percent = (y / total_values) * 100
+    if percent > 10:
 
-    if percent >= 0.1:
+        # We normalize the ndvi matrix between 0 and 255 values to have a good drawing
+        ndvi_new = contrast_stretch(ndvi).astype(np.uint8)
+
+        # We apply a colormap to the final NDVI matrix
+        ndvi_final = cv2.applyColorMap(ndvi_new, cv2.COLORMAP_JET)
+
+        # We create a mask with the image region that has no vegetation
+        res = cv2.bitwise_and(img, img, mask=cv2.bitwise_not(mask_red))
+        ndvi_final = cv2.bitwise_and(ndvi_final, ndvi_final, mask=mask_red)
+
+        # We join both NDVI final representation and the no-vegetation part of the image
+        fusion = res + ndvi_final
+
+        path = os.getcwd()
+        name = path + '/' + 'ndvi_results' + '/' + 'image' + 'ndvi' + str(percent) + '.jpeg'
+
+        cv2.imwrite(name, fusion)
 
         output_file = open('time.txt', 'x')
 
+
         data_drone = autopilot_interface.set_data_drone()
-        
+
         data_image = [percent, photo_number]
 
         write_image_data(output_file, data_drone, data_image)
 
-        # convert ndvi array to a photo again and store it
         # store the original photo
         # save the image correctly
-
-    else:
-        # discard actual data
-        time.sleep(3)
 
     return
 
