@@ -64,43 +64,54 @@ def footprint():
 
     return footprint
 
+def initialize_json(timestamp):
 
-def write_image_data(output_file, data_drone, data_image):   # function for writing the image data as a json in a txt file
-
-    year = pd.datetime.now().year
-    month = pd.datetime.now().month
-    day = pd.datetime.now().day
-    hour = pd.datetime.now().hour
-    minute = pd.datetime.now().minute
-    seconds = pd.datetime.now().second
-
-    latitude = data_drone[0]
-    longitude = data_drone[1]
-    pitch = data_drone[2]
-    altitude = data_drone[3]
-
-    percent = data_image[0]
+    global data
+    global flights
+    global results
+    global flight
 
     data = {}
-    data['image data'] = []
+    flights = {}
+    results = {}
 
-    data['image data'].append({
-        'year': year,
-        'month': month,
-        'day': day,
-        'hour': hour,
-        'minute': minute,
-        'second': seconds,
-        'latitude': latitude,
-        'longitude': longitude,
-        'altitude': altitude,
-        'pitch': pitch,
-        'Vegetation percent': percent,
-    })
+    data["flights"] = []
 
-    json.dump(data, output_file)
+    flight = {
+        "id": timestamp,
+        "results": []
+    }
 
-    return
+    data["flights"].append(flight)
+
+    print('Json initialized')
+
+def write_json(num, percentage, data_drone, image_settings, path):
+
+    coordinates = [data_drone[0], data_drone[1]]
+
+    settings = image_settings
+
+    image_data = {
+        "image_id": num,
+        "percentage": percentage,
+        "coordinates": coordinates,
+        "path": path,
+        "settings": settings
+        }
+
+    flight["results"].append(dict(image_data))
+    print(data)
+
+
+def close_json(output_file):
+    with output_file as f:
+        json.dump(data, f)
+
+        f.close()
+
+    print("done")
+
 
 
 def create_directory():  # tested and working
@@ -147,7 +158,7 @@ def main_loop(camera_interface, autopilot_interface):
     hsv_image = cv2.cvtColor(median, cv2.COLOR_BGR2HSV)
 
     # define range in HSV to create a mask that will be applied to the original image
-    lower_limit = np.array([110, 135, 160])
+    lower_limit = np.array([110, 130, 160])
     upper_limit = np.array([255, 200, 255])
 
     # Threshold the HSV image to get only vegetation
@@ -203,14 +214,16 @@ def main_loop(camera_interface, autopilot_interface):
 
         cv2.imwrite(name, fusion)
 
-        output_file = open('time.txt', 'x')
+        output_file = open('results.json', 'x')
 
 
         data_drone = autopilot_interface.set_data_drone()
 
-        data_image = [percent, photo_number]
+        image_settings = camera_interface.camera_settings()
 
-        write_image_data(output_file, data_drone, data_image)
+        write_json(num, percent, data_drone, image_settings, name)
+
+        close_json(output_file)
 
         # store the original photo
         # save the image correctly
@@ -247,21 +260,16 @@ def create_parser():
 
 def main():
 
-    # Add parsing of configuration file
-    # parser = create_parser()
-
-    opts, args = create_parser()
+    global num
+    num = 1
 
     camera_interface = CameraInterface()
 
     autopilot_interface = AutopilotInterface()
 
-    if opts.device is None:
-        TerminalMessage.print_msg("You must specify a serial device", level=ERROR, header=LOGGER_HEADER, color_header=LOGGER_COLOR)
-        sys.exit(1)
-
     main_loop(camera_interface, autopilot_interface)
 
+    num += 1
 
 if __name__ == '__main__':
     main()
