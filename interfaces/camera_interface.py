@@ -12,7 +12,7 @@ class CameraInterface:
         self.camera = PiCamera()
 
         # With the maximum resolution takes about 10 seconds to process an image
-        self.camera.resolution = (2592, 1952)
+        self.camera.resolution = (2528, 1968)
 
         # self.camera.resolution = (3280, 2464)
         # self.camera.resolution = (1640, 922)
@@ -39,6 +39,15 @@ class CameraInterface:
         cv2.imwrite(newfile, image)
 
         return
+
+    def camera_settings(self):
+        red_gain = self.
+        blue_gain = self.
+        exposure =
+        brightness =
+
+        settings = [red_gain, blue_gain, exposure, brightness]
+        return settings
 
 
 
