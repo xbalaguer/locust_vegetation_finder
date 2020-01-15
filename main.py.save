@@ -115,9 +115,8 @@ def close_json(output_file):
 
 def create_directory():  # tested and working
 
-    # path = os.getcwd()  # this returns actual directory as a string (should be modify to a raspberry directory)
-    
-    path = '/home/pi/Desktop/locust_vegetation_finder_images'
+    path = os.getcwd()  # this returns actual directory as a string (should be modify to a raspberry directory)
+
     # we need to convert numbers to string to be able to create the new path
     year = str(pd.datetime.now().year)
     month = str(pd.datetime.now().month)
@@ -126,14 +125,10 @@ def create_directory():  # tested and working
     minute = str(pd.datetime.now().minute)
 
     newpath = path + "/" + year + "_" + month + "_" + day + "-" + hour + "_" + minute  # we create the string for the new directory
-    
+
     os.mkdir(newpath)        # creates a directory
-    normal_images = newpath + '/' + 'raw_images'
-    ndvi_images = newpath + '/' + 'ndvi_images'
-    os.mkdir(normal_images)
-    os.mkdir(ndvi_images)
-    
-    return newpath
+
+    return
 
 def contrast_stretch(im):
     """
@@ -151,14 +146,34 @@ def contrast_stretch(im):
 
     return out
 
-def main_loop(num, newpath, camera_interface, autopilot_interface):
+def main_loop(camera_interface, autopilot_interface):
     
     print('@@@@ entered main loop @@@')
     
     img = camera_interface.capture_frame()
     print('@@@@ obtained image from camera @@@')
+    # We want a smoother image to have a better processing results
+    median = cv2.medianBlur(img, 5)
 
-   # Once we have a gray colorspace mask, we want to add the orginal image to it
+    # We convert the image to HSV to isolate the vegetation
+    hsv_image = cv2.cvtColor(median, cv2.COLOR_BGR2HSV)
+
+    # define range in HSV to create a mask that will be applied to the original image
+    lower_limit = np.array([110, 130, 160])
+    upper_limit = np.array([255, 200, 255])
+
+    # Threshold the HSV image to get only vegetation
+    mask_red = cv2.inRange(hsv_image, lower_limit, upper_limit)
+
+    #We process the obtained mask in order to reduce noise in the image
+    kernel = np.ones((5, 5), np.uint8)
+    opening = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
+
+    kernel = np.ones((8, 8), np.uint8)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    mask_red = closing
+
+   # Once we have a gray colorspace mask, we want to add the original image to it
     b = np.array(img[:, :, 0]).astype(float) + 0.00000000001
     g = np.array(img[:, :, 1]).astype(float)
     r = np.array(img[:, :, 2]).astype(float) + 0.00000000001
@@ -179,39 +194,41 @@ def main_loop(num, newpath, camera_interface, autopilot_interface):
     percent = round(((values_ndvi / total_values) * 100), 2)
 
     if percent >= 0:
- 
+
         # We normalize the ndvi matrix between 0 and 255 values to have a good drawing
         ndvi_new = contrast_stretch(ndvi).astype(np.uint8)
 
+        # We apply a colormap to the final NDVI matrix
+        ndvi_final = cv2.applyColorMap(ndvi_new, cv2.COLORMAP_JET)
+
+        # We create a mask with the image region that has no vegetation
+        res = cv2.bitwise_and(img, img, mask=cv2.bitwise_not(mask_red))
+        ndvi_final = cv2.bitwise_and(ndvi_final, ndvi_final, mask=mask_red)
+
+        # We join both NDVI final representation and the no-vegetation part of the image
+        fusion = res + ndvi_final
 
         path = os.getcwd()
-        image_path = '/home/pi/Desktop/locust_vegetation_finder_images'
-        
-        
-        name = newpath + '/' + 'raw_images'+'/' + str(num) + '.jpeg'
-        name_ndvi = newpath + '/' + 'ndvi_images'+'/'+ str(num) + '.jpeg'
+        name = path + '/' + 'ndvi_results' + '/' + 'image' + 'ndvi' + str(percent) + '.jpeg'
 
-        #name = path + '/' + 'ndvi_results' + '/' + 'image' + 'ndvi' + str(percent) + '.jpeg'
+        cv2.imwrite(name, fusion)
 
-        cv2.imwrite(name, img)
-        
-        ndvi_new = contrast_stretch(ndvi).astype(np.uint8)
-        cv2.imwrite(name_ndvi, ndvi_new)
-        
-        output_file = open('results.json', 'a')   # condition must be 'a' to do not rewrite the json file on each flight
+        output_file = open('results.json', 'w')
 
 
         data_drone = autopilot_interface.set_data_drone()
 
         image_settings = camera_interface.camera_settings()
 
-        write_json(num, percent, data_drone, image_settings, newpath)
+        write_json(num, percent, data_drone, image_settings, name)
 
         close_json(output_file)
         
         print('@@@ image processed @@@')
         
-    
+        # store the original photo
+        # save the image correctly
+
     return
 
 
@@ -241,28 +258,44 @@ def create_parser():
 
     return opts, args
 
-def main():
+hour = str(pd.datetime.now().hour)
+minute = str(pd.datetime.now().minute)
+timestamp = hour + '/' + minute
+initialize_json(timestamp)
 
-    hour = str(pd.datetime.now().hour)
-    minute = str(pd.datetime.now().minute)
-    timestamp = hour + '/' + minute
-    initialize_json(timestamp)
+def main():
+b = np.array(img[:, :, 0]).astype(float) + 0.00000000001
+    g = np.array(img[:, :, 1]).astype(float)
+    r = np.array(img[:, :, 2]).astype(float) + 0.00000000001
+
+    nir = r
+    red = b
+
+
+    np.seterr(divide='ignore', invalid='ignore')
+
+
+    ndvi = ((nir - red) / (nir + red)).astype(float)
+
+    #print('max ndvi value is', np.max(ndvi))
+    #print('min ndvi value is', np.min(ndvi))
+    #ndvi[ndvi < 0.2] = np.min(ndvi)
+
+    values_ndvi = np.count_nonzero(ndvi > 0.2)
+    #print(values_ndvi)
+
+    total_values = ndvi.shape[0] * ndvi.shape[1]
+
     global num
     num = 1
-    camera_interface = CameraInterface()
-    autopilot_interface = AutopilotInterface()
-    newpath = create_directory()
     
-    while True:
-        
-        altitude = autopilot_interface.get_altitude()
-        print(altitude)
-        
-        if altitude >= -50:
-            
-            main_loop(num, newpath, camera_interface, autopilot_interface)
-            camera_interface.test_settings(num)
-            num += 1
+    camera_interface = CameraInterface()
+
+    autopilot_interface = AutopilotInterface()
+
+    main_loop(camera_interface, autopilot_interface)
+
+    num += 1
 
 if __name__ == '__main__':
     main()

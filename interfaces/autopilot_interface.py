@@ -1,5 +1,5 @@
 from dronekit import *
-from main import args
+
 
 
 class AutopilotInterface():
